@@ -168,6 +168,78 @@ const ContentToggleButton = styled(PageJumpButton)`
   margin-top: 10px;
 `
 
+const SearchForm = styled.form`
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  width: min(420px, calc(100vw - 40px));
+  padding: 8px;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 12px;
+  backdrop-filter: blur(14px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+
+  @media (max-width: 768px) {
+    position: static;
+    transform: none;
+    width: 100%;
+    margin-bottom: 14px;
+  }
+`
+
+const SearchInput = styled.input<{ textColor: string }>`
+  min-width: 0;
+  flex: 1;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.2);
+  color: ${props => props.textColor};
+  font-size: 16px;
+
+  &:focus {
+    outline: 2px solid rgba(255, 255, 255, 0.55);
+    outline-offset: 1px;
+    background: rgba(255, 255, 255, 0.3);
+  }
+
+  &::placeholder {
+    color: currentColor;
+    opacity: 0.68;
+  }
+`
+
+const SearchButton = styled(PageJumpButton)`
+  min-width: 72px;
+`
+
+const SearchMessage = styled.div<{ $isError: boolean }>`
+  position: fixed;
+  top: 78px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(20, 20, 20, 0.7);
+  color: ${props => (props.$isError ? '#fecaca' : '#fff')};
+  font-size: 14px;
+  backdrop-filter: blur(10px);
+
+  @media (max-width: 768px) {
+    position: static;
+    transform: none;
+    width: 100%;
+    margin: -6px 0 14px;
+    text-align: center;
+  }
+`
+
 // 固定设置按钮
 const FixedSettingsButton = styled.button<{ textColor: string }>`
   position: fixed;
@@ -361,6 +433,12 @@ function App() {
     () => getRequestedLocation()?.index ?? getStoredIndex(selectedLibrary)
   )
   const [pageInput, setPageInput] = useState(() => currentIndex.toString())
+  const [searchInput, setSearchInput] = useState('')
+  const [isSearching, setIsSearching] = useState(false)
+  const [searchMessage, setSearchMessage] = useState<{
+    text: string
+    isError: boolean
+  } | null>(null)
   const [totalWords, setTotalWords] = useState(0)
   const [unknownWords, setUnknownWords] = useState<UnknownWord[]>(() => {
     const data = localStorage.getItem('unknownWords')
@@ -567,6 +645,76 @@ function App() {
     setCurrentIndex(nextIndex)
   }
 
+  const handleWordSearch = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    const requestedWord = searchInput.trim().toLowerCase()
+    if (!requestedWord || isSearching) {
+      return
+    }
+
+    setIsSearching(true)
+    setSearchMessage(null)
+
+    const searchLibrary = async (library: string) => {
+      const { data, error } = await supabase
+        .from(library)
+        .select('id, word')
+        .eq('word', requestedWord)
+        .limit(1)
+        .maybeSingle()
+
+      return { library, data, error }
+    }
+
+    try {
+      const currentResult = await searchLibrary(selectedLibrary)
+      let match = currentResult.data ? currentResult : null
+      let hadError = Boolean(currentResult.error)
+
+      if (!match) {
+        const otherResults = await Promise.all(
+          libraryKeys
+            .filter(library => library !== selectedLibrary)
+            .map(library => searchLibrary(library))
+        )
+
+        match = otherResults.find(result => result.data) ?? null
+        hadError = hadError || otherResults.some(result => result.error)
+      }
+
+      if (!match?.data) {
+        setSearchMessage({
+          text: hadError ? '搜索失败，请稍后重试' : `未找到“${searchInput.trim()}”`,
+          isError: true
+        })
+        return
+      }
+
+      const nextIndex = Number(match.data.id)
+      setSelectedLibrary(match.library)
+      setCurrentIndex(nextIndex)
+      setPageInput(nextIndex.toString())
+      setSearchInput(match.data.word)
+      localStorage.setItem('selectedLibrary', match.library)
+
+      const params = new URLSearchParams()
+      params.set('library', match.library)
+      params.set('index', nextIndex.toString())
+      window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`)
+
+      setSearchMessage({
+        text: `已跳转到 ${match.data.word}`,
+        isError: false
+      })
+    } catch (error) {
+      console.error('Failed to search for word:', error)
+      setSearchMessage({ text: '搜索失败，请稍后重试', isError: true })
+    } finally {
+      setIsSearching(false)
+    }
+  }
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null
@@ -600,6 +748,32 @@ function App() {
     <>
       <GlobalStyle />
       <Container bg={backgrounds[bgIndex]} textColor={bgIndex === 0 ? '#000' : '#fff'}>
+        <SearchForm onSubmit={handleWordSearch} role="search">
+          <SearchInput
+            textColor={bgIndex === 0 ? '#000' : '#fff'}
+            type="search"
+            value={searchInput}
+            placeholder="搜索英文单词"
+            onChange={event => {
+              setSearchInput(event.target.value)
+              setSearchMessage(null)
+            }}
+            aria-label="搜索单词"
+            autoComplete="off"
+          />
+          <SearchButton
+            textColor={bgIndex === 0 ? '#000' : '#fff'}
+            type="submit"
+            disabled={isSearching || !searchInput.trim()}
+          >
+            {isSearching ? '搜索中…' : '搜索'}
+          </SearchButton>
+        </SearchForm>
+        {searchMessage && (
+          <SearchMessage $isError={searchMessage.isError} role="status" aria-live="polite">
+            {searchMessage.text}
+          </SearchMessage>
+        )}
         <Sidebar>
           <Select
             textColor={bgIndex === 0 ? '#000' : '#fff'}
