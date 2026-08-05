@@ -22,6 +22,13 @@ interface Sentence {
   translation: string
 }
 
+interface UnknownWord {
+  word: string
+  translations: Translation[]
+  library?: string
+  index?: number
+}
+
 // 主容器
 const Container = styled.div<{ bg: string; textColor: string }>`
   min-height: 100vh;
@@ -275,6 +282,20 @@ const backgrounds = [
 
 const themeColors = ['#f5f5dc', '#f39c12', '#1abc9c', '#2196f3', '#1a1a2e']
 
+const libraryKeys = ['chuzhong', 'gaozhong', 'cet4', 'cet6', 'kaoyan', 'toefl', 'sat']
+
+const getRequestedLocation = () => {
+  const params = new URLSearchParams(window.location.search)
+  const library = params.get('library')
+  const index = Number.parseInt(params.get('index') || '', 10)
+
+  if (library && libraryKeys.includes(library) && Number.isInteger(index) && index > 0) {
+    return { library, index }
+  }
+
+  return null
+}
+
 function App() {
   // 从localStorage获取词库位置
   const getStoredIndex = (library: string) => {
@@ -289,6 +310,9 @@ function App() {
 
   // 从localStorage获取当前词库
   const getStoredLibrary = () => {
+    const requestedLocation = getRequestedLocation()
+    if (requestedLocation) return requestedLocation.library
+
     const stored = localStorage.getItem('selectedLibrary')
     return stored || 'cet4'
   }
@@ -333,15 +357,15 @@ function App() {
   const [showUnknown, setShowUnknown] = useState(false)
   const [showCardContent, setShowCardContent] = useState(getStoredContentVisible)
   const [selectedLibrary, setSelectedLibrary] = useState(getStoredLibrary)
-  const [currentIndex, setCurrentIndex] = useState(() => getStoredIndex(selectedLibrary))
-  const [pageInput, setPageInput] = useState(() => getStoredIndex(selectedLibrary).toString())
-  const [totalWords, setTotalWords] = useState(0)
-  const [unknownWords, setUnknownWords] = useState<{ word: string; translations: Translation[] }[]>(
-    () => {
-      const data = localStorage.getItem('unknownWords')
-      return data ? JSON.parse(data) : []
-    }
+  const [currentIndex, setCurrentIndex] = useState(
+    () => getRequestedLocation()?.index ?? getStoredIndex(selectedLibrary)
   )
+  const [pageInput, setPageInput] = useState(() => currentIndex.toString())
+  const [totalWords, setTotalWords] = useState(0)
+  const [unknownWords, setUnknownWords] = useState<UnknownWord[]>(() => {
+    const data = localStorage.getItem('unknownWords')
+    return data ? JSON.parse(data) : []
+  })
   const [isLoading, setIsLoading] = useState(false)
   const wordRequestLockedRef = useRef(false)
   const wordRequestIdRef = useRef(0)
@@ -360,6 +384,41 @@ function App() {
     toefl: '托福',
     sat: 'SAT'
   }
+
+  useEffect(() => {
+    const requestedWord = new URLSearchParams(window.location.search).get('word')
+    if (!requestedWord) return
+
+    let cancelled = false
+
+    const findRequestedWord = async () => {
+      const libraries = [selectedLibrary, ...libraryKeys.filter(key => key !== selectedLibrary)]
+
+      for (const library of libraries) {
+        const { data, error } = await supabase
+          .from(library)
+          .select('id')
+          .eq('word', requestedWord)
+          .limit(1)
+          .maybeSingle()
+
+        if (cancelled) return
+        if (!error && data?.id) {
+          setSelectedLibrary(library)
+          setCurrentIndex(data.id)
+          setPageInput(data.id.toString())
+          return
+        }
+      }
+    }
+
+    findRequestedWord()
+    return () => {
+      cancelled = true
+    }
+    // This query is intentionally resolved only once when a direct word link opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     const fetchTotalWords = async () => {
@@ -453,7 +512,7 @@ function App() {
       return false
     }
 
-    existing.push({ word, translations })
+    existing.push({ word, translations, library: selectedLibrary, index: currentIndex })
     localStorage.setItem('unknownWords', JSON.stringify(existing))
     setUnknownWords(existing)
     return true

@@ -9,8 +9,43 @@ interface Translation {
 interface UnknownWordsModalProps {
   show: boolean
   onClose: () => void
-  unknownWords: { word: string; translations: Translation[] }[]
+  unknownWords: {
+    word: string
+    translations: Translation[]
+    library?: string
+    index?: number
+  }[]
   onRemove: (index: number) => void
+}
+
+const WordLink = styled.a`
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.55);
+  text-underline-offset: 3px;
+
+  &:hover {
+    text-decoration-color: currentColor;
+  }
+
+  &:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+`
+
+const getWordHref = (item: UnknownWordsModalProps['unknownWords'][number]) => {
+  const params = new URLSearchParams()
+
+  if (item.library && item.index) {
+    params.set('library', item.library)
+    params.set('index', item.index.toString())
+  } else {
+    params.set('word', item.word)
+  }
+
+  return `${window.location.pathname}?${params.toString()}`
 }
 
 const buildWordDocument = (
@@ -294,7 +329,9 @@ export const UnknownWordsModal = ({
           unknownWords.map((item, index) => (
             <WordItem key={index}>
               <DeleteButton onClick={() => onRemove(index)}>×</DeleteButton>
-              <strong>{item.word}</strong>
+              <WordLink href={getWordHref(item)} target="_blank" rel="noopener noreferrer">
+                <strong>{item.word}</strong>
+              </WordLink>
               <br />
               {item.translations.map((t, i) => (
                 <div key={i}>
