@@ -1,9 +1,11 @@
 name: Deploy to Cloudflare Pages
 
-# 推送到 main 自动部署到 Cloudflare Pages；也可以在 Actions 页面手动触发。
+# 推送到 main 自动部署；也可以在 Actions 页面手动触发。
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
   workflow_dispatch:
 
 permissions:
@@ -19,18 +21,39 @@ jobs:
   deploy:
     name: Build & deploy
     runs-on: ubuntu-latest
+
     env:
-      # Cloudflare Pages 项目名：可在仓库 Settings → Secrets and variables → Actions → Variables
-      # 里建一个 CLOUDFLARE_PAGES_PROJECT 覆盖；不建则用下面的默认值。
-      # 注意：项目名全局唯一，原作者已占用 word-wind（word-wind.pages.dev）。
+      # Cloudflare Pages 项目名（全局唯一，原作者已占用 word-wind）
+      # 默认值来自仓库变量 CLOUDFLARE_PAGES_PROJECT，未设置时用 word-wind-study
       PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT || 'word-wind-study' }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      # 凭据没配好就立刻失败，并写清楚缺什么，省掉白跑的构建时间
+      - name: Check Cloudflare credentials
+        run: |
+          missing=""
+          [ -z "$CLOUDFLARE_API_TOKEN" ] && missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -z "$CLOUDFLARE_ACCOUNT_ID" ] && missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          if [ -n "$missing" ]; then
+            {
+              echo "### ⚠️ 部署未执行：缺少仓库 Secret"
+              echo ""
+              echo "缺少：\`$missing\`"
+              echo ""
+              echo "按 \`DEPLOY.md\` 第二节配置后，在本页点 **Re-run all jobs** 即可。"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::缺少仓库 Secret：$missing（配置方法见 DEPLOY.md）"
+            exit 1
+          fi
+          echo "✅ 凭据已配置，目标项目：$PAGES_PROJECT"
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: yarn
@@ -41,28 +64,20 @@ jobs:
       - name: Build
         run: yarn build
 
-      # 项目不存在时自动创建；已存在会报错，用 continue-on-error 忽略
-      - name: Ensure Pages project exists
-        continue-on-error: true
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages project create ${{ env.PAGES_PROJECT }} --production-branch=main
+      # 项目不存在时自动创建；已存在会报错，忽略即可
+      - name: Create Pages project if missing
+        run: npx --yes wrangler@3 pages project create "$PAGES_PROJECT" --production-branch=main || echo "::notice::项目已存在，跳过创建"
 
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=${{ env.PAGES_PROJECT }} --branch=${{ github.ref_name }}
+        run: npx --yes wrangler@3 pages deploy dist --project-name="$PAGES_PROJECT" --branch="${GITHUB_REF_NAME}"
 
       - name: Summary
+        if: always()
         run: |
           {
-            echo "### Cloudflare Pages 部署完成 ✅"
+            echo "### Cloudflare Pages"
             echo ""
-            echo "- 项目名：\`${PAGES_PROJECT}\`"
+            echo "- 项目：\`${PAGES_PROJECT}\`"
             echo "- 生产地址：https://${PAGES_PROJECT}.pages.dev"
             echo "- 分支：\`${GITHUB_REF_NAME}\`"
           } >> "$GITHUB_STEP_SUMMARY"
