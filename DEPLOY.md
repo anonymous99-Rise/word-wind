@@ -67,14 +67,32 @@ Actions 那条是对的，两条交替生效 → 白页时有时无。
 | `destination_dir` | `dist` |
 | `root_dir` | （留空） |
 
-**自查命令**（第一条必须 404，第二条必须指向 `/assets/`）：
+**自查命令**：
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" https://learn.dfyx.click/src/main.tsx   # 期望 404
-curl -s https://learn.dfyx.click/ | grep -o 'assets/index-[^"]*\.js'               # 期望 /assets/index-xxx.js
+# ① 最关键：首页必须引用 /assets/ 下的构建产物
+curl -s https://learn.dfyx.click/ | grep -o 'assets/index-[^"]*\.js'
+
+# ② 随机不存在的路径必须返回 404
+curl -s -o /dev/null -w "%{http_code}\n" "https://learn.dfyx.click/no-such-path-$RANDOM"
+
+# ③ 如果 ① 正常但 /src/main.tsx 仍是 200，先看 Age 头再下结论
+curl -sI https://learn.dfyx.click/src/main.tsx | grep -iE 'age|cf-cache-status'
 ```
 
-如果第一条又变成 200，说明又在发仓库根目录了 —— 去检查 Pages 项目的 build 配置。
+> ⚠️ **别只看 `/src/main.tsx` 的状态码**：破版期间这些仓库文件被 Cloudflare 按静态资源
+> 缓存了（`Cache-Control: public, s-maxage=604800`，边缘 7 天）。即使部署已经修好，
+> 缓存里的旧副本仍会返回 200 —— 响应头里带 `Age: >0` 就说明是旧缓存，**不是部署坏了**。
+>
+> 想立刻清掉：CF 控制台 → 你的域名 → **Caching → Configuration → Purge Everything**
+> （清缓存只是让边缘回源重新拉，对 `wallpaper.dfyx.click` 那个站也无害）。
+> 也可以用 API 定向清，但需要 token 有 `Zone → Cache Purge` 权限：
+>
+> ```bash
+> curl -X POST "https://api.cloudflare.com/client/v4/zones/<ZONE_ID>/purge_cache" \
+>   -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
+>   --data '{"files":["https://learn.dfyx.click/src/main.tsx"]}'
+> ```
 
 ---
 
