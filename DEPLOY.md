@@ -96,10 +96,30 @@ CF 侧自带 Git 集成，push 自动部署，不需要任何 GitHub Secret。
 
 ---
 
-## 关于项目里第三方账号的说明
+## 第三方依赖与数据归属
 
-以下两处仍指向**原作者**的账号，不影响本站部署，但建议知悉：
+站点里原本有三处指向**原作者**的资源，目前状态：
 
-- `src/utils/supabase.ts`：反馈表单写入的是原作者的 Supabase 项目（`caftssprzybryhyvvxwi.supabase.co`）。
-  妹妹的站要收集反馈的话，需自建 Supabase 项目并替换这里的 URL 与 publishable key。
-- `index.html` 底部：Cloudflare Web Analytics 的 token 也属于原作者账号（统计数据会记到他那边）。可以删掉，或换成自己账号的 token。
+| 位置 | 原状态 | 现状态 |
+| --- | --- | --- |
+| 反馈表单（`SettingsModal.tsx`） | 访客邮箱+内容写入原作者的 Supabase | ✅ **已默认关闭**，面板里不显示该表单；要开启需配自己的 Supabase 并设 `VITE_FEEDBACK_ENABLED=true` |
+| Cloudflare Web Analytics（`index.html`） | 硬编码原作者的 beacon token | ✅ **已移除**脚本，改为 `VITE_CF_BEACON_TOKEN` 控制，留空则不加载任何统计脚本 |
+| 词库数据（`src/utils/supabase.ts`） | 全部单词数据读自原作者的 Supabase 公开只读表 | ⚠️ **仍在使用**（见下） |
+
+### 关于词库数据
+
+站点取词、释义、例句、搜索、总数全部走 Supabase 的 REST 接口，读的是原作者的公开只读表：
+
+- 规模：7 张表（chuzhong / gaozhong / cet4 / cet6 / kaoyan / toefl / sat），共 **54,356 条**，原始约 **66 MB**，gzip 后约 **20 MB**
+- 性质：这些是 `KyleBing/english-vocabulary` 的**公开词库**，anonym key 本就是设计成公开的，不涉及访客隐私
+- 风险：**依赖别人的项目**——原作者一旦关库、改 schema 或限流，站点就取不到词
+
+换自己的数据源有三种做法，通过 `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` 切换（见 `.env.example`）：
+
+1. **自建 Supabase**（最省事）：新建项目 → 按同样 schema 导入 7 张表 → 把 URL 和 publishable key 填进仓库变量
+2. **打包成静态 JSON**（最独立、零后端）：把 54k 条导出为按词库切分的 JSON 放进 `public/data/`，切词库时懒加载。缺点是最大的 toefl 约 17 MB（gzip 约 5 MB），首次切换该词库要下载
+3. **保持现状**：能用，但依赖对方
+
+> 部署层面的构建期变量在 `.github/workflows/deploy-cloudflare-pages.yml` 的 Build 步骤里，
+> 值来自仓库 **Settings → Secrets and variables → Actions → Variables**（变量名同上，留空即用默认）。
+

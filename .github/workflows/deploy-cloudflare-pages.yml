@@ -63,6 +63,14 @@ jobs:
 
       - name: Build
         run: yarn build
+        # 这些是构建期变量（Vite 会内联进产物），不填就是默认行为：
+        # 词库走原作者的公开只读实例、反馈表单关闭、不加载统计脚本。
+        # 要覆盖就在仓库 Settings → Secrets and variables → Actions → Variables 里建同名变量。
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_FEEDBACK_ENABLED: ${{ vars.VITE_FEEDBACK_ENABLED }}
+          VITE_CF_BEACON_TOKEN: ${{ vars.VITE_CF_BEACON_TOKEN }}
 
       # 先查项目是否存在，不在才创建，避免每跑一次都留一条 warning
       - name: Ensure Pages project exists

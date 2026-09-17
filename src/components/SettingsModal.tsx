@@ -1,6 +1,6 @@
 import styled from 'styled-components'
 import { useState, useEffect } from 'react'
-import { supabase } from '../utils/supabase'
+import { supabase, isFeedbackEnabled } from '../utils/supabase'
 
 const Modal = styled.div`
   position: fixed;
@@ -156,6 +156,7 @@ export const SettingsModal = ({
   }
 
   const handleSubmit = async () => {
+    if (!isFeedbackEnabled) return
     if (!email.trim() && !content.trim()) {
       alert('邮箱和内容不能为空')
       return
@@ -247,29 +248,33 @@ export const SettingsModal = ({
             </Button>
           ))}
         </div>
-        <h2>反馈</h2>
-        <label>
-          邮箱：<span style={{ color: 'red' }}>*</span>
-        </label>
-        <Input
-          type="email"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
-          placeholder="请输入您的邮箱"
-          maxLength={100}
-          required
-        />
-        <label>
-          内容：<span style={{ color: 'red' }}>*</span>
-        </label>
-        <Input
-          value={content}
-          onChange={e => setContent(e.target.value)}
-          placeholder="请输入反馈内容"
-          maxLength={100}
-          required
-        />
-        <Button onClick={handleSubmit}>提交</Button>
+        {isFeedbackEnabled && (
+          <>
+            <h2>反馈</h2>
+            <label>
+              邮箱：<span style={{ color: 'red' }}>*</span>
+            </label>
+            <Input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="请输入您的邮箱"
+              maxLength={100}
+              required
+            />
+            <label>
+              内容：<span style={{ color: 'red' }}>*</span>
+            </label>
+            <Input
+              value={content}
+              onChange={e => setContent(e.target.value)}
+              placeholder="请输入反馈内容"
+              maxLength={100}
+              required
+            />
+            <Button onClick={handleSubmit}>提交</Button>
+          </>
+        )}
       </ModalContent>
     </Modal>
   )
