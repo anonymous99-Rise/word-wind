@@ -82,17 +82,23 @@ curl -sI https://learn.dfyx.click/src/main.tsx | grep -iE 'age|cf-cache-status'
 
 > ⚠️ **别只看 `/src/main.tsx` 的状态码**：破版期间这些仓库文件被 Cloudflare 按静态资源
 > 缓存了（`Cache-Control: public, s-maxage=604800`，边缘 7 天）。即使部署已经修好，
-> 缓存里的旧副本仍会返回 200 —— 响应头里带 `Age: >0` 就说明是旧缓存，**不是部署坏了**。
+> 缓存里的旧副本仍会在**部分边缘节点**返回 200。
 >
-> 想立刻清掉：CF 控制台 → 你的域名 → **Caching → Configuration → Purge Everything**
-> （清缓存只是让边缘回源重新拉，对 `wallpaper.dfyx.click` 那个站也无害）。
-> 也可以用 API 定向清，但需要 token 有 `Zone → Cache Purge` 权限：
+> **而且不同节点状态不一致**：同一时刻有的节点返回 200（旧缓存）、有的返回 404（回源），
+> 所以反复 curl 会看到时好时坏 —— 这**不代表部署有问题**。判断依据是响应头里有没有 `Age`：
 >
 > ```bash
-> curl -X POST "https://api.cloudflare.com/client/v4/zones/<ZONE_ID>/purge_cache" \
->   -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
->   --data '{"files":["https://learn.dfyx.click/src/main.tsx"]}'
+> curl -sI https://learn.dfyx.click/src/main.tsx | grep -iE 'age|cf-cache-status'
+> # Age: 2520  → 来自旧缓存，忽略
+> # 没有 Age 头 → 真的回源到 404
 > ```
+>
+> **可靠的判断只看两条**：① 首页引用的是不是 `/assets/`；② 随机路径是不是 404。
+> 这两条不受缓存抽奖影响。
+>
+> 想立刻清掉那 4 个旧缓存：CF 控制台 → 你的域名 → **Caching → Configuration → Purge Everything**
+> （清缓存只是让边缘回源重新拉，对 `wallpaper.dfyx.click` 那个站也无害）。
+> 也可以用 API 定向清，但 token 需要有 `Zone → Cache Purge` 权限。
 
 ---
 
