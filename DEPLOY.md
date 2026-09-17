@@ -36,7 +36,7 @@
 | `VITE_SUPABASE_ANON_KEY` | 自己的 anon key | 同上 |
 | `NODE_VERSION` | `22` | Vite 7 要求 |
 | `YARN_VERSION` | `1.22.22` | 仓库是 yarn v1 lockfile，不钉会撞 `YN0028` |
-| `VITE_FEEDBACK_ENABLED` | 留空（默认关闭） | 设为 `true` 才显示反馈表单 |
+| `VITE_FEEDBACK_ENABLED` | `true` | 显示反馈表单；设为 `false` 或留空则隐藏 |
 
 - **GitHub Actions 侧**：仓库 Settings → Secrets and variables → Actions → **Variables**
 - **Cloudflare Git 构建侧**：Pages 项目 → Settings → **Environment variables**
@@ -194,7 +194,7 @@ CF 侧自带 Git 集成，push 自动部署，不需要任何 GitHub Secret。
 
 | 位置 | 原状态 | 现状态 |
 | --- | --- | --- |
-| 反馈表单（`SettingsModal.tsx`） | 访客邮箱+内容写入原作者的 Supabase | ✅ **已默认关闭**，面板里不显示该表单；要开启需配自己的 Supabase 并设 `VITE_FEEDBACK_ENABLED=true` |
+| 反馈表单（`SettingsModal.tsx`） | 访客邮箱+内容写入原作者的 Supabase | ✅ **已改为写入自己的库**（表 `user_feedback`），并通过 `VITE_FEEDBACK_ENABLED=true` 开启 |
 | Cloudflare Web Analytics（`index.html`） | 硬编码原作者的 beacon token | ✅ **已移除**脚本，改为 `VITE_CF_BEACON_TOKEN` 控制，留空则不加载任何统计脚本 |
 | 词库数据（`src/utils/supabase.ts`） | 全部单词数据读自原作者的 Supabase 公开只读表 | ✅ **已迁移到自己的实例**（见下） |
 
@@ -222,6 +222,21 @@ CF 侧自带 Git 集成，push 自动部署，不需要任何 GitHub Secret。
 > 这两个值是**构建期**注入的（Vite 会内联进产物），改完必须重新构建才生效。
 > anon key 本来就是公开的（会打进前端包），放在 Variables 而不是 Secrets 是合适的；
 > 真正的 `service_role` key 只在本地导入数据时用过，**绝不能进仓库或前端**。
+
+### 反馈表的表名（容易踩）
+
+`SettingsModal.tsx` 里写入的是 **`user_feedback`（下划线）**。
+原作者用的是 `user-feedback`（连字符）——迁移时统一成了下划线，**改表名要两边同步**
+（`schema.sql` 和 `SettingsModal.tsx`），否则提交会 404 失败。
+
+反馈表的权限设计是**只写不读**：
+
+| 角色 | INSERT | SELECT |
+| --- | --- | --- |
+| `anon`（前端用的 key） | ✅ 允许 | ❌ 读不到（返回 `[]`） |
+| `service_role` | ✅ | ✅（只能在服务端用，别放进前端） |
+
+看反馈只能去 Supabase 控制台 → Table Editor → `user_feedback`。
 
 > 部署层面的构建期变量在 `.github/workflows/deploy-cloudflare-pages.yml` 的 Build 步骤里，
 > 值来自仓库 **Settings → Secrets and variables → Actions → Variables**（变量名同上，留空即用默认）。

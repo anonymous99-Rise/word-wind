@@ -265,7 +265,9 @@ export const SettingsModal = ({
       return
     }
     try {
-      const { error } = await supabase.from('user-feedback').insert({
+      // 注意：表名是 user_feedback（下划线）。原作者用的是 user-feedback（连字符），
+      // 迁移到自建实例后统一成下划线，改这里必须同步 schema.sql。
+      const { error } = await supabase.from('user_feedback').insert({
         email,
         content,
         created_at: new Date()
