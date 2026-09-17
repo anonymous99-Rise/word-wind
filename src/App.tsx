@@ -862,13 +862,12 @@ function App() {
     localStorage.setItem(SWIPE_HINT_STORAGE_KEY, '1')
   }
 
-  // 提示浮在底部栏上方，7 秒后自动收起，别一直挡着
+  // 提示浮在底部栏上方，7 秒后自动收起，别一直挡着。
+  // 注意：超时收起只在本次会话生效，不写 localStorage —— 只有真的滑动过一次才算「已学会」，
+  // 否则用户没注意到提示就再也看不到了。
   useEffect(() => {
     if (!showSwipeHint) return
-    const timer = setTimeout(() => {
-      setShowSwipeHint(false)
-      localStorage.setItem(SWIPE_HINT_STORAGE_KEY, '1')
-    }, 7000)
+    const timer = setTimeout(() => setShowSwipeHint(false), 7000)
     return () => clearTimeout(timer)
   }, [showSwipeHint])
 
