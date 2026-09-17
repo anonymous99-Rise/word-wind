@@ -3,7 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/logo.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
     <title>Word Wind - 高效在线背单词网页 | 英语词汇记忆工具</title>
     <meta
       name="description"
@@ -40,6 +43,19 @@
           class="octo-body"
         /></svg></a
     ><style>
+      /* 首屏还没挂载 React 时先铺一层深色，避免白闪 */
+      html,
+      body {
+        background: #111827;
+      }
+
+      .github-corner {
+        position: absolute;
+        top: 0;
+        right: 0;
+        z-index: 40;
+      }
+
       .github-corner:hover .octo-arm {
         animation: octocat-wave 560ms ease-in-out;
       }
@@ -55,6 +71,12 @@
         40%,
         80% {
           transform: rotate(10deg);
+        }
+      }
+      @media (max-width: 768px) {
+        /* 移动端顶部空间宝贵，角标会压住搜索框，直接隐藏 */
+        .github-corner {
+          display: none;
         }
       }
       @media (max-width: 500px) {

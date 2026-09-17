@@ -1,11 +1,12 @@
-import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react'
-import styled from 'styled-components'
+import { type FormEvent, type TouchEvent, useCallback, useEffect, useRef, useState } from 'react'
+import styled, { css } from 'styled-components'
 import { GlobalStyle } from './components/GlobalStyles'
 import { gradientShift, pulse } from './components/animations'
 import { WordCard } from './components/WordCard'
 import { SettingsModal } from './components/SettingsModal'
 import { UnknownWordsModal } from './components/UnknownWordsModal'
 import { supabase } from './utils/supabase'
+import { fetchRandomWallpaper, type BackgroundSetting } from './utils/wallpaper'
 
 interface Translation {
   type: string
@@ -29,89 +30,159 @@ interface UnknownWord {
   index?: number
 }
 
+// 背景设置：在线壁纸 或 纯色渐变（类型定义在 utils/wallpaper.ts）
+
+// ── 背景层（固定铺满，不参与文档流）─────────────────────────────
+const BackgroundLayer = styled.div<{ $image: string; $gradient: string; $animate: boolean }>`
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-image: ${props => (props.$image ? `url('${props.$image}')` : props.$gradient)};
+  background-size: ${props => (props.$image ? 'cover' : '400% 400%')};
+  background-position: center;
+  background-repeat: no-repeat;
+  animation: ${props => (props.$animate ? css`${gradientShift} 15s ease infinite` : 'none')};
+`
+
+// 壁纸压暗层：保证白字在任意图片上都读得清
+const Scrim = styled.div<{ $show: boolean }>`
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(8, 10, 20, 0.62) 0%,
+    rgba(8, 10, 20, 0.34) 42%,
+    rgba(8, 10, 20, 0.7) 100%
+  );
+  opacity: ${props => (props.$show ? 1 : 0)};
+  transition: opacity 0.5s ease;
+`
+
+// 渐变背景的装饰光晕（只在纯色渐变时出现）
+const GradientGlow = styled.div<{ $show: boolean }>`
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  display: ${props => (props.$show ? 'block' : 'none')};
+  background:
+    radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%),
+    radial-gradient(circle at 40% 40%, rgba(120, 219, 226, 0.3) 0%, transparent 50%);
+  animation: ${pulse} 8s ease-in-out infinite;
+`
+
 // 主容器
-const Container = styled.div<{ bg: string; textColor: string }>`
+const Container = styled.div<{ $textColor: string }>`
   min-height: 100vh;
-  background: ${props => props.bg};
-  background-size: 400% 400%;
-  animation: ${gradientShift} 15s ease infinite;
   display: flex;
   flex-direction: row;
   align-items: center;
   justify-content: center;
   padding: 80px 20px;
   font-family: 'Inter', sans-serif;
-  color: ${props => props.textColor};
+  color: ${props => props.$textColor};
   position: relative;
-  overflow: hidden;
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background:
-      radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
-      radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%),
-      radial-gradient(circle at 40% 40%, rgba(120, 219, 226, 0.3) 0%, transparent 50%);
-    animation: ${pulse} 8s ease-in-out infinite;
-  }
+  z-index: 1;
 
   @media (max-width: 768px) {
     flex-direction: column;
-    padding: 80px 10px;
     align-items: stretch;
+    padding: 20px 12px 108px;
   }
 `
 
-// 下拉框容器
+// 词库选择区
 const Sidebar = styled.div`
   position: fixed;
   top: 80px;
   left: 20px;
+  width: 232px;
   display: flex;
   flex-direction: column;
-  padding: 20px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
   z-index: 10;
 
   @media (max-width: 768px) {
     position: static;
     width: 100%;
-    margin-bottom: 20px;
-    padding: 15px;
+    margin-bottom: 14px;
+    padding: 14px;
   }
 `
 
-// 下拉框样式
-const Select = styled.select<{ textColor: string }>`
-  padding: 10px;
-  border: none;
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.2);
-  color: ${props => props.textColor};
-  font-size: 16px;
+const SidebarLabel = styled.span`
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+  margin-bottom: 8px;
+`
+
+// 词库胶囊选择器
+const LibraryTabs = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+
+  @media (max-width: 768px) {
+    gap: 6px;
+  }
+`
+
+const LibraryTab = styled.button<{ $active: boolean; $textColor: string }>`
+  padding: 8px 13px;
+  min-height: 38px;
+  border-radius: 999px;
   cursor: pointer;
-  &:focus {
-    outline: none;
-    background: rgba(255, 255, 255, 0.3);
+  font-size: 14px;
+  line-height: 1;
+  white-space: nowrap;
+  color: ${props => props.$textColor};
+  font-weight: ${props => (props.$active ? 700 : 500)};
+  border: 1px solid
+    ${props => (props.$active ? 'rgba(255, 255, 255, 0.7)' : 'rgba(255, 255, 255, 0.24)')};
+  background: ${props =>
+    props.$active ? 'rgba(255, 255, 255, 0.34)' : 'rgba(255, 255, 255, 0.1)'};
+  box-shadow: ${props =>
+    props.$active ? '0 6px 18px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.35)' : 'none'};
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.15s ease;
+
+  &:active {
+    transform: scale(0.95);
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.7);
+    outline-offset: 2px;
+  }
+
+  @media (max-width: 768px) {
+    flex: 1 1 auto;
+    padding: 10px 12px;
+    min-height: 42px;
   }
 `
 
-// 显示框样式
-const DisplayBox = styled.div<{ textColor: string }>`
-  padding: 10px;
-  border: none;
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.2);
-  color: ${props => props.textColor};
-  font-size: 16px;
-  margin-top: 10px;
+// 当前进度显示
+const DisplayBox = styled.div`
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 14px;
+  margin-top: 12px;
   white-space: pre-line;
+  line-height: 1.5;
 `
 
 const PageSelectorForm = styled.form`
@@ -120,46 +191,50 @@ const PageSelectorForm = styled.form`
   margin-top: 10px;
 `
 
-const PageInput = styled.input<{ textColor: string }>`
+const PageInput = styled.input<{ $textColor: string }>`
   min-width: 0;
-  width: 92px;
+  flex: 1;
+  width: 100%;
   padding: 10px;
   border: none;
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.2);
-  color: ${props => props.textColor};
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.16);
+  color: ${props => props.$textColor};
   font-size: 16px;
 
   &:focus {
-    outline: none;
-    background: rgba(255, 255, 255, 0.3);
+    outline: 2px solid rgba(255, 255, 255, 0.5);
+    outline-offset: 1px;
+    background: rgba(255, 255, 255, 0.26);
   }
 
   &::placeholder {
     color: currentColor;
-    opacity: 0.7;
+    opacity: 0.6;
   }
 `
 
-const PageJumpButton = styled.button<{ textColor: string }>`
-  padding: 10px 12px;
+const PageJumpButton = styled.button<{ $textColor: string }>`
+  padding: 10px 14px;
   border: none;
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.2);
-  color: ${props => props.textColor};
-  font-size: 16px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.16);
+  color: ${props => props.$textColor};
+  font-size: 15px;
   cursor: ${props => (props.disabled ? 'not-allowed' : 'pointer')};
+  transition: background 0.2s ease;
 
   &:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.28);
   }
 
-  &:focus {
-    outline: none;
+  &:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.6);
+    outline-offset: 2px;
   }
 
   &:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
   }
 `
 
@@ -178,34 +253,34 @@ const SearchForm = styled.form`
   width: min(420px, calc(100vw - 40px));
   padding: 8px;
   gap: 8px;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 14px;
   backdrop-filter: blur(14px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
 
   @media (max-width: 768px) {
     position: static;
     transform: none;
     width: 100%;
-    margin-bottom: 14px;
+    margin-bottom: 12px;
   }
 `
 
-const SearchInput = styled.input<{ textColor: string }>`
+const SearchInput = styled.input<{ $textColor: string }>`
   min-width: 0;
   flex: 1;
   padding: 10px 12px;
   border: none;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.2);
-  color: ${props => props.textColor};
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.18);
+  color: ${props => props.$textColor};
   font-size: 16px;
 
   &:focus {
     outline: 2px solid rgba(255, 255, 255, 0.55);
     outline-offset: 1px;
-    background: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.28);
   }
 
   &::placeholder {
@@ -215,7 +290,8 @@ const SearchInput = styled.input<{ textColor: string }>`
 `
 
 const SearchButton = styled(PageJumpButton)`
-  min-width: 72px;
+  min-width: 76px;
+  border-radius: 9px;
 `
 
 const SearchMessage = styled.div<{ $isError: boolean }>`
@@ -226,7 +302,7 @@ const SearchMessage = styled.div<{ $isError: boolean }>`
   z-index: 20;
   padding: 6px 12px;
   border-radius: 8px;
-  background: rgba(20, 20, 20, 0.7);
+  background: rgba(20, 20, 20, 0.72);
   color: ${props => (props.$isError ? '#fecaca' : '#fff')};
   font-size: 14px;
   backdrop-filter: blur(10px);
@@ -235,116 +311,171 @@ const SearchMessage = styled.div<{ $isError: boolean }>`
     position: static;
     transform: none;
     width: 100%;
-    margin: -6px 0 14px;
+    margin: -4px 0 12px;
     text-align: center;
   }
 `
 
-// 固定设置按钮
-const FixedSettingsButton = styled.button<{ textColor: string }>`
+// 固定设置按钮（桌面端右上角）
+const FixedSettingsButton = styled.button<{ $textColor: string }>`
   position: fixed;
   top: 80px;
   right: 20px;
   padding: 10px 20px;
   border: none;
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.2);
-  color: ${props => props.textColor};
-  font-size: 16px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.16);
+  color: ${props => props.$textColor};
+  font-size: 15px;
   cursor: pointer;
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px);
+  transition: background 0.2s ease;
+
   &:hover {
-    background: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.28);
   }
-  &:focus {
-    outline: none;
+
+  &:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.6);
+    outline-offset: 2px;
   }
+
   z-index: 10;
 
   @media (max-width: 768px) {
     position: static;
-    padding: 8px 15px;
-    font-size: 14px;
   }
 `
 
-// 不会单词按钮
 const UnknownWordsButton = styled(FixedSettingsButton)`
   top: 150px;
 `
 
-// 大箭头按钮
-const ArrowButton = styled.button<{ textColor: string }>`
+// 大箭头按钮（桌面端左右悬浮）
+const ArrowButton = styled.button<{ $textColor: string }>`
   padding: 15px 30px;
   border: none;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.2);
-  color: ${props => props.textColor};
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.16);
+  color: ${props => props.$textColor};
   font-size: 18px;
   cursor: ${props => (props.disabled ? 'not-allowed' : 'pointer')};
   display: flex;
   align-items: center;
   gap: 10px;
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px);
+  transition: background 0.2s ease;
+
   &:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.28);
   }
-  &:focus {
-    outline: none;
+
+  &:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.6);
+    outline-offset: 2px;
   }
+
   &:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
   }
 `
 
-// 左箭头按钮
 const LeftArrowButton = styled(ArrowButton)`
   position: fixed;
   bottom: 200px;
   left: 50px;
   z-index: 10;
-
-  @media (max-width: 768px) {
-    position: static;
-  }
 `
 
-// 右箭头按钮
 const RightArrowButton = styled(ArrowButton)`
   position: fixed;
   bottom: 200px;
   right: 50px;
   z-index: 10;
+`
+
+// 卡片区域：移动端左右滑动的命中区
+const SwipeArea = styled.div<{ $dragging: boolean; $offset: number }>`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  touch-action: pan-y;
+  transform: translateX(${props => props.$offset}px);
+  transition: ${props => (props.$dragging ? 'none' : 'transform 0.22s ease')};
+`
+
+// 滑动提示（首次使用后消失）
+const SwipeHint = styled.div`
+  display: none;
 
   @media (max-width: 768px) {
-    position: static;
+    display: block;
+    text-align: center;
+    font-size: 13px;
+    opacity: 0.7;
+    margin-top: 12px;
   }
 `
 
-// 箭头按钮容器（移动端）
-const ArrowContainer = styled.div`
+// 移动端底部操作栏
+const MobileBar = styled.div`
+  display: none;
+
   @media (max-width: 768px) {
     display: flex;
-    justify-content: space-between;
-    width: 100%;
-    margin-top: 20px;
+    gap: 8px;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+    background: rgba(10, 10, 20, 0.6);
+    backdrop-filter: blur(16px);
+    border-top: 1px solid rgba(255, 255, 255, 0.16);
+    z-index: 30;
   }
 `
 
-// 按钮容器（移动端）
-const ButtonContainer = styled.div`
+const BarButton = styled.button<{ $textColor: string; $icon?: boolean }>`
+  min-height: 48px;
+  min-width: ${props => (props.$icon ? '56px' : 'auto')};
+  flex: ${props => (props.$icon ? '0 0 auto' : '1 1 0')};
+  padding: 0 12px;
+  border: none;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.16);
+  color: ${props => props.$textColor};
+  font-size: ${props => (props.$icon ? '20px' : '14px')};
+  font-weight: 500;
+  cursor: ${props => (props.disabled ? 'not-allowed' : 'pointer')};
+  opacity: ${props => (props.disabled ? 0.4 : 1)};
+  white-space: nowrap;
+
+  &:active:not(:disabled) {
+    background: rgba(255, 255, 255, 0.3);
+  }
+`
+
+// 桌面端才显示的两组容器
+const DesktopOnly = styled.div`
   @media (max-width: 768px) {
-    display: flex;
-    justify-content: space-between;
-    width: 100%;
-    margin-top: 20px;
+    display: none;
   }
 `
 
-const BACKGROUND_STORAGE_KEY = 'selectedBackground'
+const ArrowContainer = styled(DesktopOnly)``
+
+const ButtonContainer = styled(DesktopOnly)``
+
+const BACKGROUND_STORAGE_KEY = 'wordWindBackground'
+const LEGACY_BACKGROUND_STORAGE_KEY = 'selectedBackground'
 const CONTENT_VISIBILITY_STORAGE_KEY = 'wordCardContentVisible'
+const SWIPE_HINT_STORAGE_KEY = 'wordWindSwipeHintSeen'
 
-const backgrounds = [
+const gradientBackgrounds = [
   'linear-gradient(-45deg, #f5f5dc, #ede0c8, #f5f5dc)',
   'linear-gradient(-45deg, #f39c12, #e67e22, #e74c3c, #c0392b, #f39c12)',
   'linear-gradient(-45deg, #1abc9c, #16a085, #2ecc71, #27ae60, #1abc9c)',
@@ -352,9 +483,55 @@ const backgrounds = [
   'linear-gradient(-45deg, #1a1a2e, #16213e, #0f3460, #1a1a2e, #533483)'
 ]
 
-const themeColors = ['#f5f5dc', '#f39c12', '#1abc9c', '#2196f3', '#1a1a2e']
+// 设置面板里每个渐变的代表色
+const gradientSwatchColors = ['#f5f5dc', '#f39c12', '#1abc9c', '#2196f3', '#1a1a2e']
 
 const libraryKeys = ['chuzhong', 'gaozhong', 'cet4', 'cet6', 'kaoyan', 'toefl', 'sat']
+
+const libraryNames: { [key: string]: string } = {
+  chuzhong: '初中',
+  gaozhong: '高中',
+  cet4: 'CET4',
+  cet6: 'CET6',
+  kaoyan: '考研',
+  toefl: '托福',
+  sat: 'SAT'
+}
+
+const clampedGradientIndex = (value: number) =>
+  Number.isInteger(value) && value >= 0 && value < gradientBackgrounds.length ? value : 0
+
+/** 读取背景设置，兼容旧版本的纯数字索引存档 */
+const readStoredBackground = (): BackgroundSetting => {
+  try {
+    const raw = localStorage.getItem(BACKGROUND_STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<BackgroundSetting> | null
+      if (parsed?.kind === 'wallpaper' && typeof parsed.url === 'string') {
+        return {
+          kind: 'wallpaper',
+          url: parsed.url,
+          title: parsed.title ?? '',
+          date: parsed.date ?? ''
+        }
+      }
+      if (parsed?.kind === 'gradient' && typeof parsed.index === 'number') {
+        return { kind: 'gradient', index: clampedGradientIndex(parsed.index) }
+      }
+    }
+
+    const legacy = localStorage.getItem(LEGACY_BACKGROUND_STORAGE_KEY)
+    if (legacy !== null) {
+      const index = Number.parseInt(legacy, 10)
+      if (Number.isInteger(index)) return { kind: 'gradient', index: clampedGradientIndex(index) }
+    }
+  } catch {
+    // 存档损坏时忽略，用默认值
+  }
+
+  // 默认：在线壁纸（url 为空时先用渐变兜底，挂载后立刻拉一张）
+  return { kind: 'wallpaper', url: '', title: '', date: '' }
+}
 
 const getRequestedLocation = () => {
   const params = new URLSearchParams(window.location.search)
@@ -389,34 +566,13 @@ function App() {
     return stored || 'cet4'
   }
 
-  // 从localStorage获取背景设置
-  const getStoredBackgroundIndex = () => {
-    const stored = localStorage.getItem(BACKGROUND_STORAGE_KEY)
-    const index = stored ? Number.parseInt(stored, 10) : 0
-    return Number.isInteger(index) && index >= 0 && index < backgrounds.length ? index : 0
-  }
-
   // 从localStorage获取内容显示设置
   const getStoredContentVisible = () => {
     return localStorage.getItem(CONTENT_VISIBILITY_STORAGE_KEY) !== 'false'
   }
 
-  // 处理背景切换
-  const handleBackgroundChange = (index: number) => {
-    setBgIndex(index)
-    localStorage.setItem(BACKGROUND_STORAGE_KEY, index.toString())
-  }
-
-  // 处理词库切换
-  const handleLibraryChange = (value: string) => {
-    setSelectedLibrary(value)
-
-    const index = getStoredIndex(value)
-    setCurrentIndex(index)
-    setPageInput(index.toString())
-
-    localStorage.setItem('selectedLibrary', value)
-  }
+  /** 是否还该显示「左右滑动」提示 */
+  const getShowSwipeHint = () => localStorage.getItem(SWIPE_HINT_STORAGE_KEY) !== '1'
 
   const [word, setWord] = useState('')
   const [us, setUs] = useState('')
@@ -424,7 +580,9 @@ function App() {
   const [translations, setTranslations] = useState<Translation[]>([])
   const [phrases, setPhrases] = useState<Phrase[]>([])
   const [sentences, setSentences] = useState<Sentence[]>([])
-  const [bgIndex, setBgIndex] = useState(getStoredBackgroundIndex)
+  const [background, setBackground] = useState<BackgroundSetting>(readStoredBackground)
+  const [isWallpaperLoading, setIsWallpaperLoading] = useState(false)
+  const [wallpaperError, setWallpaperError] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [showUnknown, setShowUnknown] = useState(false)
   const [showCardContent, setShowCardContent] = useState(getStoredContentVisible)
@@ -445,22 +603,75 @@ function App() {
     return data ? JSON.parse(data) : []
   })
   const [isLoading, setIsLoading] = useState(false)
+  const [showSwipeHint, setShowSwipeHint] = useState(getShowSwipeHint)
+  const [dragOffset, setDragOffset] = useState(0)
+  const [isDragging, setIsDragging] = useState(false)
   const wordRequestLockedRef = useRef(false)
   const wordRequestIdRef = useRef(0)
+  const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null)
+  const draggedRef = useRef(false)
 
   const clampIndex = useCallback(
     (index: number) => Math.min(Math.max(index, 1), Math.max(totalWords, 1)),
     [totalWords]
   )
 
-  const libraryNames: { [key: string]: string } = {
-    chuzhong: '初中',
-    gaozhong: '高中',
-    cet4: 'CET4',
-    cet6: 'CET6',
-    kaoyan: '考研',
-    toefl: '托福',
-    sat: 'SAT'
+  // ── 背景 ─────────────────────────────────────────────────
+  const activeGradient =
+    background.kind === 'gradient' ? gradientBackgrounds[background.index] : gradientBackgrounds[0]
+  const wallpaperUrl = background.kind === 'wallpaper' ? background.url : ''
+  // 只有第一个渐变是浅色，需要深色文字；壁纸一律白字（有压暗层兜底）
+  const textColor = background.kind === 'gradient' && background.index === 0 ? '#000' : '#fff'
+
+  const loadWallpaper = useCallback(async () => {
+    setIsWallpaperLoading(true)
+    setWallpaperError(null)
+
+    const next = await fetchRandomWallpaper()
+
+    setIsWallpaperLoading(false)
+    if (!next) {
+      setWallpaperError('壁纸加载失败，已暂时使用纯色背景')
+      return
+    }
+
+    setBackground({ kind: 'wallpaper', url: next.url, title: next.title, date: next.date })
+  }, [])
+
+  // 选了壁纸但还没拿到图片时，自动拉一张
+  useEffect(() => {
+    if (background.kind !== 'wallpaper' || wallpaperUrl) return
+    loadWallpaper()
+  }, [background.kind, wallpaperUrl, loadWallpaper])
+
+  useEffect(() => {
+    localStorage.setItem(BACKGROUND_STORAGE_KEY, JSON.stringify(background))
+    localStorage.removeItem(LEGACY_BACKGROUND_STORAGE_KEY)
+  }, [background])
+
+  const handleSelectGradient = (index: number) => {
+    setBackground({ kind: 'gradient', index })
+  }
+
+  const handleEnableWallpaper = () => {
+    if (background.kind === 'wallpaper') {
+      loadWallpaper()
+      return
+    }
+    setBackground({ kind: 'wallpaper', url: '', title: '', date: '' })
+  }
+
+  // 处理词库切换
+  const handleLibraryChange = (value: string) => {
+    if (value === selectedLibrary) return
+
+    setSelectedLibrary(value)
+
+    const index = getStoredIndex(value)
+    setCurrentIndex(index)
+    setPageInput(index.toString())
+
+    localStorage.setItem('selectedLibrary', value)
   }
 
   useEffect(() => {
@@ -621,6 +832,65 @@ function App() {
     [clampIndex, currentIndex, isLoading]
   )
 
+  // ── 移动端左右滑动切词 ───────────────────────────────────
+  const markSwipeHintSeen = () => {
+    if (!showSwipeHint) return
+    setShowSwipeHint(false)
+    localStorage.setItem(SWIPE_HINT_STORAGE_KEY, '1')
+  }
+
+  const handleTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    if (event.touches.length !== 1) return
+    const touch = event.touches[0]
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() }
+    draggedRef.current = false
+  }
+
+  const handleTouchMove = (event: TouchEvent<HTMLDivElement>) => {
+    const start = touchStartRef.current
+    if (!start || event.touches.length !== 1) return
+
+    const touch = event.touches[0]
+    const deltaX = touch.clientX - start.x
+    const deltaY = touch.clientY - start.y
+
+    if (!draggedRef.current) {
+      // 横向位移不够明显时不动手，把纵向留给页面滚动
+      if (Math.abs(deltaX) < 12 || Math.abs(deltaX) < Math.abs(deltaY) * 1.2) return
+      draggedRef.current = true
+      setIsDragging(true)
+    }
+
+    // 到头了就加阻尼，给出「拉不动」的反馈
+    const atStart = currentIndex <= 1 && deltaX > 0
+    const atEnd = totalWords > 0 && currentIndex >= totalWords && deltaX < 0
+    setDragOffset(atStart || atEnd ? deltaX * 0.25 : deltaX)
+  }
+
+  const handleTouchEnd = () => {
+    const start = touchStartRef.current
+    touchStartRef.current = null
+
+    if (!start || !draggedRef.current) {
+      setIsDragging(false)
+      setDragOffset(0)
+      return
+    }
+
+    const deltaX = dragOffset
+    const elapsed = Date.now() - start.time
+    draggedRef.current = false
+    setIsDragging(false)
+    setDragOffset(0)
+
+    // 距离够远，或者快速轻扫，都算一次翻页
+    const isFlick = elapsed < 260 && Math.abs(deltaX) > 28
+    if (Math.abs(deltaX) < 55 && !isFlick) return
+
+    markSwipeHintSeen()
+    changeWord(deltaX < 0 ? 1 : -1)
+  }
+
   const handlePageSelect = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
@@ -747,10 +1017,18 @@ function App() {
   return (
     <>
       <GlobalStyle />
-      <Container bg={backgrounds[bgIndex]} textColor={bgIndex === 0 ? '#000' : '#fff'}>
+      <BackgroundLayer
+        $image={wallpaperUrl}
+        $gradient={activeGradient}
+        $animate={background.kind === 'gradient'}
+      />
+      <Scrim $show={Boolean(wallpaperUrl)} />
+      <GradientGlow $show={background.kind === 'gradient'} />
+
+      <Container $textColor={textColor}>
         <SearchForm onSubmit={handleWordSearch} role="search">
           <SearchInput
-            textColor={bgIndex === 0 ? '#000' : '#fff'}
+            $textColor={textColor}
             type="search"
             value={searchInput}
             placeholder="搜索英文单词"
@@ -762,7 +1040,7 @@ function App() {
             autoComplete="off"
           />
           <SearchButton
-            textColor={bgIndex === 0 ? '#000' : '#fff'}
+            $textColor={textColor}
             type="submit"
             disabled={isSearching || !searchInput.trim()}
           >
@@ -774,26 +1052,29 @@ function App() {
             {searchMessage.text}
           </SearchMessage>
         )}
+
         <Sidebar>
-          <Select
-            textColor={bgIndex === 0 ? '#000' : '#fff'}
-            value={selectedLibrary}
-            onChange={e => handleLibraryChange(e.target.value)}
-          >
-            <option value="chuzhong">初中</option>
-            <option value="gaozhong">高中</option>
-            <option value="cet4">CET4</option>
-            <option value="cet6">CET6</option>
-            <option value="kaoyan">考研</option>
-            <option value="toefl">托福</option>
-            <option value="sat">SAT</option>
-          </Select>
-          <DisplayBox textColor={bgIndex === 0 ? '#000' : '#fff'}>
+          <SidebarLabel>选择词库</SidebarLabel>
+          <LibraryTabs role="group" aria-label="选择词库">
+            {libraryKeys.map(key => (
+              <LibraryTab
+                key={key}
+                type="button"
+                $active={key === selectedLibrary}
+                $textColor={textColor}
+                aria-pressed={key === selectedLibrary}
+                onClick={() => handleLibraryChange(key)}
+              >
+                {libraryNames[key]}
+              </LibraryTab>
+            ))}
+          </LibraryTabs>
+          <DisplayBox>
             {`当前是${libraryNames[selectedLibrary]}词库\n第${currentIndex}个，共${totalWords}个`}
           </DisplayBox>
           <PageSelectorForm onSubmit={handlePageSelect}>
             <PageInput
-              textColor={bgIndex === 0 ? '#000' : '#fff'}
+              $textColor={textColor}
               type="number"
               min={1}
               max={totalWords || undefined}
@@ -804,7 +1085,7 @@ function App() {
               aria-label="选择页码"
             />
             <PageJumpButton
-              textColor={bgIndex === 0 ? '#000' : '#fff'}
+              $textColor={textColor}
               type="submit"
               disabled={isLoading || totalWords === 0}
             >
@@ -812,14 +1093,22 @@ function App() {
             </PageJumpButton>
           </PageSelectorForm>
           <ContentToggleButton
-            textColor={bgIndex === 0 ? '#000' : '#fff'}
+            $textColor={textColor}
             type="button"
             onClick={handleContentVisibilityToggle}
           >
             {showCardContent ? '隐藏释义' : '显示释义'}
           </ContentToggleButton>
         </Sidebar>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+
+        <SwipeArea
+          $dragging={isDragging}
+          $offset={dragOffset}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
+        >
           <WordCard
             word={word}
             us={us}
@@ -827,50 +1116,79 @@ function App() {
             translations={translations}
             phrases={phrases}
             sentences={sentences}
-            bgIndex={bgIndex}
+            textColor={textColor}
             isLoading={isLoading}
             showContent={showCardContent}
-            onSettingsClick={() => setShowSettings(true)}
             onPlayPhonetic={playPhonetic}
             onDontKnow={handleDontKnow}
           />
-        </div>
+        </SwipeArea>
+
+        {showSwipeHint && <SwipeHint>← 左右滑动切换单词 →</SwipeHint>}
+
         <ArrowContainer>
           <LeftArrowButton
-            textColor={bgIndex === 0 ? '#000' : '#fff'}
+            $textColor={textColor}
             onClick={() => changeWord(-1)}
             disabled={isLoading || currentIndex <= 1}
           >
             ⬅️ 上一个
           </LeftArrowButton>
           <RightArrowButton
-            textColor={bgIndex === 0 ? '#000' : '#fff'}
+            $textColor={textColor}
             onClick={() => changeWord(1)}
             disabled={isLoading || currentIndex >= totalWords}
           >
             下一个 ➡️
           </RightArrowButton>
         </ArrowContainer>
+
         <ButtonContainer>
-          <FixedSettingsButton
-            textColor={bgIndex === 0 ? '#000' : '#fff'}
-            onClick={() => setShowSettings(true)}
-          >
+          <FixedSettingsButton $textColor={textColor} onClick={() => setShowSettings(true)}>
             设置&反馈
           </FixedSettingsButton>
-          <UnknownWordsButton
-            textColor={bgIndex === 0 ? '#000' : '#fff'}
-            onClick={() => setShowUnknown(true)}
-          >
+          <UnknownWordsButton $textColor={textColor} onClick={() => setShowUnknown(true)}>
             不会的单词
           </UnknownWordsButton>
         </ButtonContainer>
+
+        <MobileBar>
+          <BarButton
+            $icon
+            $textColor="#fff"
+            aria-label="上一个"
+            onClick={() => changeWord(-1)}
+            disabled={isLoading || currentIndex <= 1}
+          >
+            ⬅️
+          </BarButton>
+          <BarButton $textColor="#fff" onClick={() => setShowUnknown(true)}>
+            不会的单词
+          </BarButton>
+          <BarButton $textColor="#fff" onClick={() => setShowSettings(true)}>
+            设置
+          </BarButton>
+          <BarButton
+            $icon
+            $textColor="#fff"
+            aria-label="下一个"
+            onClick={() => changeWord(1)}
+            disabled={isLoading || currentIndex >= totalWords}
+          >
+            ➡️
+          </BarButton>
+        </MobileBar>
+
         <SettingsModal
           show={showSettings}
           onClose={() => setShowSettings(false)}
-          backgrounds={backgrounds}
-          themeColors={themeColors}
-          onSelectBackground={handleBackgroundChange}
+          background={background}
+          gradients={gradientBackgrounds}
+          gradientSwatchColors={gradientSwatchColors}
+          isWallpaperLoading={isWallpaperLoading}
+          wallpaperError={wallpaperError}
+          onSelectGradient={handleSelectGradient}
+          onEnableWallpaper={handleEnableWallpaper}
         />
         <UnknownWordsModal
           show={showUnknown}

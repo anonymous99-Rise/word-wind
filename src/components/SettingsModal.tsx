@@ -1,6 +1,7 @@
 import styled from 'styled-components'
 import { useState, useEffect } from 'react'
 import { supabase, isFeedbackEnabled } from '../utils/supabase'
+import type { BackgroundSetting } from '../utils/wallpaper'
 
 const Modal = styled.div`
   position: fixed;
@@ -40,100 +41,194 @@ const ModalContent = styled.div<{ isOpen: boolean }>`
   `}
 
   @media (max-width: 768px) {
-    padding: 28px 24px;
-    max-height: calc(100vh - 24px);
-  }
-`
-
-const Button = styled.button<{ i?: number }>`
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: ${props => (props.i === 0 ? '#000' : 'white')};
-  font-size: 16px;
-  font-weight: 500;
-  padding: 12px 24px;
-  border: none;
-  border-radius: 30px;
-  cursor: pointer;
-  margin: 10px;
-  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
-  position: relative;
-  overflow: hidden;
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-    transition: left 0.5s;
-  }
-  &:hover {
-    transform: translateY(-3px) scale(1.05);
-    box-shadow: 0 12px 35px rgba(102, 126, 234, 0.3);
-    &::before {
-      left: 100%;
-    }
-  }
-  &:active {
-    transform: translateY(-1px) scale(1.02);
+    padding: 24px 18px;
+    width: calc(100% - 24px);
+    border-radius: 20px;
   }
 `
 
 const CloseButton = styled.button`
   position: absolute;
-  top: 10px;
-  right: 10px;
-  background: none;
+  top: 12px;
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  background: transparent;
   border: none;
   color: white;
-  font-size: 24px;
+  font-size: 26px;
+  line-height: 1;
   cursor: pointer;
-  padding: 0;
-  width: 30px;
-  height: 30px;
+  border-radius: 50%;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.15);
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.6);
+  }
+`
+
+const SectionTitle = styled.h2`
+  font-size: 18px;
+  margin: 24px 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`
+
+const SectionHint = styled.p`
+  font-size: 13px;
+  opacity: 0.7;
+  margin: 0 0 12px;
+  line-height: 1.5;
+`
+
+const WallpaperCard = styled.div<{ $active: boolean }>`
+  border-radius: 16px;
+  overflow: hidden;
+  border: 2px solid ${props => (props.$active ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.16)')};
+  background: rgba(255, 255, 255, 0.08);
+  transition: border-color 0.25s ease;
+`
+
+const WallpaperPreview = styled.div<{ $image: string }>`
+  height: 130px;
+  background-image: ${props => (props.$image ? `url('${props.$image}')` : 'none')};
+  background-size: cover;
+  background-position: center;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
-  transition: background-color 0.3s;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+`
+
+const WallpaperFooter = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+`
+
+const WallpaperTitle = styled.span`
+  font-size: 13px;
+  opacity: 0.85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`
+
+const Button = styled.button<{ $variant?: 'primary' | 'ghost' }>`
+  min-height: 42px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  background: ${props =>
+    props.$variant === 'ghost' ? 'rgba(255, 255, 255, 0.16)' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'};
+  color: #fff;
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.7);
+    outline-offset: 2px;
+  }
+`
+
+const SwatchRow = styled.div`
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+`
+
+const Swatch = styled.button<{ $color: string; $active: boolean }>`
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: ${props => props.$color};
+  border: 2px solid ${props => (props.$active ? '#fff' : 'rgba(255, 255, 255, 0.2)')};
+  cursor: pointer;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease;
+  box-shadow: ${props => (props.$active ? '0 0 0 3px rgba(255, 255, 255, 0.25)' : 'none')};
+
   &:hover {
-    background-color: rgba(255, 255, 255, 0.1);
+    transform: translateY(-3px);
   }
-  &:active {
-    background-color: rgba(255, 255, 255, 0.2);
+
+  &:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.7);
+    outline-offset: 2px;
   }
+`
+
+const ErrorText = styled.p`
+  color: #fecaca;
+  font-size: 13px;
+  margin: 8px 0 0;
 `
 
 const Input = styled.input`
   width: 100%;
-  padding: 10px;
-  margin: 10px 0;
-  border: 1px solid #ccc;
-  border-radius: 5px;
-  box-sizing: border-box;
+  padding: 12px;
+  margin-bottom: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.1);
   color: white;
+  font-size: 16px;
+
   &::placeholder {
-    color: rgba(255, 255, 255, 0.7);
+    color: rgba(255, 255, 255, 0.5);
   }
+
+  &:focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.5);
+  }
+`
+
+const Label = styled.label`
+  display: block;
+  font-size: 14px;
+  margin-bottom: 6px;
+  opacity: 0.9;
 `
 
 interface SettingsModalProps {
   show: boolean
   onClose: () => void
-  backgrounds: string[]
-  themeColors: string[]
-  onSelectBackground: (index: number) => void
+  background: BackgroundSetting
+  gradients: string[]
+  gradientSwatchColors: string[]
+  isWallpaperLoading: boolean
+  wallpaperError: string | null
+  onSelectGradient: (index: number) => void
+  onEnableWallpaper: () => void
 }
 
 export const SettingsModal = ({
   show,
   onClose,
-  backgrounds,
-  themeColors,
-  onSelectBackground
+  background,
+  gradients,
+  gradientSwatchColors,
+  isWallpaperLoading,
+  wallpaperError,
+  onSelectGradient,
+  onEnableWallpaper
 }: SettingsModalProps) => {
   const [isVisible, setIsVisible] = useState(show)
   const [isOpen, setIsOpen] = useState(false)
@@ -194,6 +289,10 @@ export const SettingsModal = ({
 
   if (!isVisible) return null
 
+  const wallpaperActive = background.kind === 'wallpaper'
+  const wallpaperUrl = wallpaperActive ? background.url : ''
+  const activeGradientIndex = background.kind === 'gradient' ? background.index : -1
+
   return (
     <Modal onClick={onClose}>
       <ModalContent
@@ -201,7 +300,9 @@ export const SettingsModal = ({
         onClick={e => e.stopPropagation()}
         onTransitionEnd={handleTransitionEnd}
       >
-        <CloseButton onClick={onClose}>×</CloseButton>
+        <CloseButton onClick={onClose} aria-label="关闭设置">
+          ×
+        </CloseButton>
         <p>
           喜欢这个网站？
           <br />
@@ -231,29 +332,53 @@ export const SettingsModal = ({
           <br />
           欢迎将网站分享给身边的朋友！
         </p>
-        <h2>设置</h2>
-        <p>选择背景：</p>
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          {backgrounds.map((_, i) => (
+
+        <SectionTitle>背景</SectionTitle>
+        <WallpaperCard $active={wallpaperActive}>
+          <WallpaperPreview $image={wallpaperUrl}>
+            {isWallpaperLoading
+              ? '正在获取壁纸…'
+              : wallpaperUrl
+                ? ''
+                : '点击右侧按钮获取一张在线壁纸'}
+          </WallpaperPreview>
+          <WallpaperFooter>
+            <WallpaperTitle>
+              {wallpaperActive && background.title ? background.title : '在线壁纸'}
+            </WallpaperTitle>
             <Button
-              key={i}
-              i={i}
-              style={{ background: themeColors[i] }}
-              onClick={() => {
-                onSelectBackground(i)
-                onClose()
-              }}
+              $variant={wallpaperActive ? 'ghost' : 'primary'}
+              onClick={onEnableWallpaper}
+              disabled={isWallpaperLoading}
             >
-              背景{i + 1}
+              {isWallpaperLoading ? '加载中…' : wallpaperActive ? '换一张' : '使用在线壁纸'}
             </Button>
+          </WallpaperFooter>
+        </WallpaperCard>
+        {wallpaperError && <ErrorText>{wallpaperError}</ErrorText>}
+        <SectionHint>壁纸来自 wallpaper-daily，每次「换一张」随机获取一张。</SectionHint>
+
+        <SectionHint>或者选一个纯色渐变：</SectionHint>
+        <SwatchRow>
+          {gradients.map((_, index) => (
+            <Swatch
+              key={index}
+              type="button"
+              $color={gradientSwatchColors[index]}
+              $active={activeGradientIndex === index}
+              aria-label={`渐变背景 ${index + 1}`}
+              aria-pressed={activeGradientIndex === index}
+              onClick={() => onSelectGradient(index)}
+            />
           ))}
-        </div>
+        </SwatchRow>
+
         {isFeedbackEnabled && (
           <>
-            <h2>反馈</h2>
-            <label>
+            <SectionTitle>反馈</SectionTitle>
+            <Label>
               邮箱：<span style={{ color: 'red' }}>*</span>
-            </label>
+            </Label>
             <Input
               type="email"
               value={email}
@@ -262,9 +387,9 @@ export const SettingsModal = ({
               maxLength={100}
               required
             />
-            <label>
+            <Label>
               内容：<span style={{ color: 'red' }}>*</span>
-            </label>
+            </Label>
             <Input
               value={content}
               onChange={e => setContent(e.target.value)}
