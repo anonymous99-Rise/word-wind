@@ -1136,6 +1136,7 @@ function App() {
         <SwipeArea
           $dragging={isDragging}
           $offset={dragOffset}
+          data-testid="swipe-area"
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
