@@ -8,6 +8,9 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+# 构建产物：由 Cloudflare Git 构建 / GitHub Actions 现场生成，不入库。
+# 入库会导致「本地构建没带环境变量 → 提交的 dist 指向错误的 Supabase」这类坑。
+dist
 dist-ssr
 *.local
 

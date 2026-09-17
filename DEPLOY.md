@@ -119,8 +119,16 @@ curl -sI https://learn.dfyx.click/src/main.tsx | grep -iE 'age|cf-cache-status'
 git add -A && git commit -m "..." && git push
 ```
 
-工作流自动构建 + 部署，约 1 分钟。也可以在仓库 **Actions** → **Deploy to Cloudflare Pages** → **Run workflow** 手动触发。
-只改 `*.md` 的提交不会触发部署（工作流里配了 `paths-ignore`）。
+推送到 `main` 后，**Cloudflare 的 Git 集成**会自动构建 + 部署，约 40–75 秒。
+需要重新部署时可以空提交一次（`git commit --allow-empty -m "redeploy"`），或在
+**Actions** → **Deploy to Cloudflare Pages** → **Run workflow** 手动走兜底链路。
+
+> Cloudflare 那边配的是 `path_includes: ["*"]`，所以**任何提交都会触发构建，包括只改文档**。
+> 想省构建次数的话，可以在 Pages 项目的 Build 设置里把它改成只匹配相关路径。
+
+> `dist/` 是**构建产物，已从版本控制移除**（在 `.gitignore` 里）。
+> 两条部署链路都会在云端现场 `yarn build`，所以不需要也不应该把它提交进来。
+> 本地想预览就自己 `yarn build`，产物不会污染提交记录。
 
 ---
 
