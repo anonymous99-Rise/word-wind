@@ -178,8 +178,14 @@ const PlayButton = styled(Button)`
   background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
   box-shadow: 0 8px 25px rgba(245, 87, 108, 0.3);
   font-size: 15px;
-  padding: 12px 20px;
+  padding: 12px 18px;
   margin: 0;
+  /* 音标含 IPA 扩展字符（ˈ ˌ ɪ ə ʃ ː ɜ ɚ …），显式给一个覆盖面广的字体栈，
+     否则回退字体缺字形时这些符号会显示成方框 */
+  font-family:
+    'Inter', 'Segoe UI', 'Noto Sans', 'Helvetica Neue', Arial, 'Apple Color Emoji',
+    'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+  letter-spacing: 0.01em;
 
   @media (hover: hover) {
     &:hover {
@@ -293,8 +299,20 @@ export const WordCard = ({
     <Card>
       <Title $textColor={textColor}>{word}</Title>
       <PhoneticRow>
-        <PlayButton onClick={() => onPlayPhonetic('us')}>🇺🇸 🔊 {us}</PlayButton>
-        <PlayButton onClick={() => onPlayPhonetic('uk')}>🇬🇧 🔊 {uk}</PlayButton>
+        <PlayButton
+          onClick={() => onPlayPhonetic('us')}
+          title="点击播放美式发音"
+          aria-label={`播放美式发音 ${us}`}
+        >
+          🇺🇸 美 {us} 🔊
+        </PlayButton>
+        <PlayButton
+          onClick={() => onPlayPhonetic('uk')}
+          title="点击播放英式发音"
+          aria-label={`播放英式发音 ${uk}`}
+        >
+          🇬🇧 英 {uk} 🔊
+        </PlayButton>
       </PhoneticRow>
       {showContent && (
         <>

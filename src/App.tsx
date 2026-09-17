@@ -1,5 +1,5 @@
 import { type FormEvent, type TouchEvent, useCallback, useEffect, useRef, useState } from 'react'
-import styled, { css } from 'styled-components'
+import styled, { css, keyframes } from 'styled-components'
 import { GlobalStyle } from './components/GlobalStyles'
 import { gradientShift, pulse } from './components/animations'
 import { WordCard } from './components/WordCard'
@@ -99,7 +99,7 @@ const Sidebar = styled.div`
   position: fixed;
   top: 80px;
   left: 20px;
-  width: 232px;
+  width: 264px;
   display: flex;
   flex-direction: column;
   padding: 16px;
@@ -126,10 +126,10 @@ const SidebarLabel = styled.span`
   margin-bottom: 8px;
 `
 
-// 词库胶囊选择器
+// 词库胶囊选择器：固定 4 列网格，行宽一致，不会出现半截按钮
 const LibraryTabs = styled.div`
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 7px;
 
   @media (max-width: 768px) {
@@ -138,13 +138,16 @@ const LibraryTabs = styled.div`
 `
 
 const LibraryTab = styled.button<{ $active: boolean; $textColor: string }>`
-  padding: 8px 13px;
+  padding: 8px 4px;
   min-height: 38px;
   border-radius: 999px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13.5px;
   line-height: 1;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
   color: ${props => props.$textColor};
   font-weight: ${props => (props.$active ? 700 : 500)};
   border: 1px solid
@@ -168,9 +171,8 @@ const LibraryTab = styled.button<{ $active: boolean; $textColor: string }>`
   }
 
   @media (max-width: 768px) {
-    flex: 1 1 auto;
-    padding: 10px 12px;
     min-height: 42px;
+    font-size: 14px;
   }
 `
 
@@ -407,16 +409,37 @@ const SwipeArea = styled.div<{ $dragging: boolean; $offset: number }>`
   transition: ${props => (props.$dragging ? 'none' : 'transform 0.22s ease')};
 `
 
-// 滑动提示（首次使用后消失）
+// 滑动提示：浮在底部操作栏上方，不占文档流，免得被长卡片挤到屏幕外
+const toastIn = keyframes`
+  from {
+    opacity: 0;
+    transform: translate(-50%, 10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+`
+
 const SwipeHint = styled.div`
   display: none;
 
   @media (max-width: 768px) {
     display: block;
-    text-align: center;
+    position: fixed;
+    left: 50%;
+    bottom: calc(86px + env(safe-area-inset-bottom, 0px));
+    z-index: 31;
+    padding: 9px 16px;
+    border-radius: 999px;
+    background: rgba(10, 10, 20, 0.74);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #fff;
     font-size: 13px;
-    opacity: 0.7;
-    margin-top: 12px;
+    white-space: nowrap;
+    pointer-events: none;
+    animation: ${toastIn} 0.4s ease both;
   }
 `
 
@@ -839,6 +862,16 @@ function App() {
     localStorage.setItem(SWIPE_HINT_STORAGE_KEY, '1')
   }
 
+  // 提示浮在底部栏上方，7 秒后自动收起，别一直挡着
+  useEffect(() => {
+    if (!showSwipeHint) return
+    const timer = setTimeout(() => {
+      setShowSwipeHint(false)
+      localStorage.setItem(SWIPE_HINT_STORAGE_KEY, '1')
+    }, 7000)
+    return () => clearTimeout(timer)
+  }, [showSwipeHint])
+
   const handleTouchStart = (event: TouchEvent<HTMLDivElement>) => {
     if (event.touches.length !== 1) return
     const touch = event.touches[0]
@@ -1126,8 +1159,7 @@ function App() {
 
         {showSwipeHint && <SwipeHint>← 左右滑动切换单词 →</SwipeHint>}
 
-        <ArrowContainer>
-          <LeftArrowButton
+        <ArrowContainer>          <LeftArrowButton
             $textColor={textColor}
             onClick={() => changeWord(-1)}
             disabled={isLoading || currentIndex <= 1}
