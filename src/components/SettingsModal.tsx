@@ -207,23 +207,23 @@ export const SettingsModal = ({
           <br />
           欢迎关注作者：
           <a
-            href="https://github.com/heygsc"
+            href="https://github.com/anonymous99-Rise"
             target="_blank"
             rel="noopener noreferrer"
             style={{ color: 'orange' }}
           >
-            https://github.com/heygsc
+            https://github.com/anonymous99-Rise
           </a>
           <br />
           <br />
           请到{' '}
           <a
-            href="https://github.com/heygsc/word-wind"
+            href="https://github.com/anonymous99-Rise/word-wind"
             target="_blank"
             rel="noopener noreferrer"
             style={{ color: 'orange' }}
           >
-            https://github.com/heygsc/word-wind
+            https://github.com/anonymous99-Rise/word-wind
           </a>{' '}
           点亮 star 进行收藏！
           <br />

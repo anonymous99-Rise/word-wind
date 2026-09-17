@@ -1,0 +1,68 @@
+name: Deploy to Cloudflare Pages
+
+# 推送到 main 自动部署到 Cloudflare Pages；也可以在 Actions 页面手动触发。
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+
+# 同一分支同时只跑一个部署，新的推送取消上一次未完成的运行
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build & deploy
+    runs-on: ubuntu-latest
+    env:
+      # Cloudflare Pages 项目名：可在仓库 Settings → Secrets and variables → Actions → Variables
+      # 里建一个 CLOUDFLARE_PAGES_PROJECT 覆盖；不建则用下面的默认值。
+      # 注意：项目名全局唯一，原作者已占用 word-wind（word-wind.pages.dev）。
+      PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT || 'word-wind-study' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build
+        run: yarn build
+
+      # 项目不存在时自动创建；已存在会报错，用 continue-on-error 忽略
+      - name: Ensure Pages project exists
+        continue-on-error: true
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages project create ${{ env.PAGES_PROJECT }} --production-branch=main
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=${{ env.PAGES_PROJECT }} --branch=${{ github.ref_name }}
+
+      - name: Summary
+        run: |
+          {
+            echo "### Cloudflare Pages 部署完成 ✅"
+            echo ""
+            echo "- 项目名：\`${PAGES_PROJECT}\`"
+            echo "- 生产地址：https://${PAGES_PROJECT}.pages.dev"
+            echo "- 分支：\`${GITHUB_REF_NAME}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

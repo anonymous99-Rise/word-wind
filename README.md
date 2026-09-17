@@ -5,8 +5,8 @@
   <p>一个简洁、流畅的在线背单词网页 🎨</p>
   <p>
     <a href="https://word-wind.pages.dev">在线体验</a> ·
-    <a href="https://github.com/heygsc/word-wind/issues">提交问题</a> ·
-    <a href="https://github.com/heygsc">关注作者</a>
+    <a href="https://github.com/anonymous99-Rise/word-wind/issues">提交问题</a> ·
+    <a href="https://github.com/anonymous99-Rise">关注作者</a>
   </p>
 </div>
 
@@ -42,5 +42,5 @@
 
 单词库来源：[KyleBing/english-vocabulary](https://github.com/KyleBing/english-vocabulary)。
 
-本项目仅供学习用途。觉得有帮助的话，欢迎前往 [GitHub 项目主页](https://github.com/heygsc/word-wind)
+本项目仅供学习用途。觉得有帮助的话，欢迎前往 [GitHub 项目主页](https://github.com/anonymous99-Rise/word-wind)
 点亮 Star ⭐
