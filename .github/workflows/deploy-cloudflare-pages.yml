@@ -1,12 +1,15 @@
 name: Deploy to Cloudflare Pages
 
-# 推送到 main 自动部署；也可以在 Actions 页面手动触发。
+# 日常部署走 Cloudflare 自己的 Git 集成（push 即自动构建，见 DEPLOY.md）。
+# 这个工作流保留为「手动兜底」：只在 Actions 页面点 Run workflow 时才跑，
+# 用 wrangler 把 dist/ 直接上传一次 —— 适合临时跳过 Git 构建、或排查部署问题时用。
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - '**.md'
   workflow_dispatch:
+    inputs:
+      reason:
+        description: '本次手动部署的原因（只是备注，会写进运行摘要）'
+        required: false
+        default: '手动兜底部署'
 
 permissions:
   contents: read
@@ -107,9 +110,12 @@ jobs:
         if: always()
         run: |
           {
-            echo "### Cloudflare Pages"
+            echo "### Cloudflare Pages（手动兜底部署）"
             echo ""
+            echo "- 原因：${{ inputs.reason }}"
             echo "- 项目：\`${PAGES_PROJECT}\`"
             echo "- 生产地址：https://${PAGES_PROJECT}.pages.dev"
             echo "- 分支：\`${GITHUB_REF_NAME}\`"
+            echo ""
+            echo "> 日常的 push 部署由 Cloudflare 的 Git 集成完成，不经过本工作流。"
           } >> "$GITHUB_STEP_SUMMARY"

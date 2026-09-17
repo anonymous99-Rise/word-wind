@@ -19,45 +19,77 @@
 
 ---
 
-## ⚠️ 重要：本项目同时存在两套部署，必须保证两边配置一致
+## 部署链路（当前设置：Cloudflare 自动 + Actions 手动兜底）
 
-这个 Pages 项目**既接了 GitHub 自动构建，又跑着 GitHub Actions 工作流**（`source.type = github`），
-所以每次 push 会产生**两个部署**：
-
-| 触发类型 | 来源 | 说明 |
+| 场景 | 走哪条路 | 怎么触发 |
 | --- | --- | --- |
-| `github:push` | Cloudflare 自己拉仓库构建 | 用 Pages 项目里的 `build_config` |
-| `ad_hoc` | `.github/workflows/deploy-cloudflare-pages.yml` | 用 wrangler 直接上传 `dist/` |
+| **日常推送** | **Cloudflare 自己的 Git 集成** | `git push` 到 `main`，约 40–75 秒 |
+| **手动兜底 / 排查部署问题** | GitHub Actions 工作流 | 仓库 → Actions → **Deploy to Cloudflare Pages** → **Run workflow** |
 
-**谁后落地谁生效。**
+这样安排之后，**push 时只有一条链路在跑**，不会再出现「两个部署在赛跑、谁后落地谁生效」的问题。
 
-曾经踩过的坑：Pages 项目的 `build_config` 是空的（`build_command` 和 `destination_dir` 都是空串），
-导致 Cloudflare 的 Git 构建**直接把仓库根目录当静态站发布** —— 首页引用的还是 `/src/main.tsx`，
-浏览器拿到 `application/octet-stream` 拒绝执行，页面**整个白屏**（`#root` 为空）。
-而 Actions 那条路是对的，两条路交替生效，所以表现成「白页时有时无」。
+### 两边都必须配的环境变量（改数据源/开关时别漏）
 
-正确的 `build_config`（已通过 API 修好）：
+| 变量 | 值 | 作用 |
+| --- | --- | --- |
+| `VITE_SUPABASE_URL` | `https://bmddblhrrwxfbxvreirq.supabase.co` | 词库数据源 |
+| `VITE_SUPABASE_ANON_KEY` | 自己的 anon key | 同上 |
+| `NODE_VERSION` | `22` | Vite 7 要求 |
+| `YARN_VERSION` | `1.22.22` | 仓库是 yarn v1 lockfile，不钉会撞 `YN0028` |
+| `VITE_FEEDBACK_ENABLED` | 留空（默认关闭） | 设为 `true` 才显示反馈表单 |
+
+- **GitHub Actions 侧**：仓库 Settings → Secrets and variables → Actions → **Variables**
+- **Cloudflare Git 构建侧**：Pages 项目 → Settings → **Environment variables**
+
+> 这些是**构建期**变量（Vite 会内联进产物），两边都要配、改完都要重新构建才生效。
+
+---
+
+## ⚠️ 历史坑：为什么曾经白屏
+
+Pages 项目**曾经同时开着两套部署**，而 CF 侧 `build_config` 是空的：
+
+```
+build_command: ""        destination_dir: ""        root_dir: ""
+```
+
+于是 CF 的 Git 构建**把仓库根目录当静态站发布**，首页引用的还是 `/src/main.tsx`，
+浏览器拿到 `application/octet-stream` 拒绝执行 → `#root` 为空 → **整页白屏**。
+Actions 那条是对的，两条交替生效 → 白页时有时无。
+
+现已修复（配置见下表），并把 Actions 改成手动，从根上消除了赛跑。
+
+正确的 `build_config`：
 
 | 字段 | 值 |
 | --- | --- |
 | `build_command` | `yarn build` |
 | `destination_dir` | `dist` |
 | `root_dir` | （留空） |
-| 环境变量 `NODE_VERSION` | `22`（Vite 7 要求 Node ≥ 20.19 / 22.12） |
 
-**自查方法**（应该 404，如果 200 就说明又在发仓库根目录了）：
+**自查命令**（第一条必须 404，第二条必须指向 `/assets/`）：
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" https://learn.dfyx.click/src/main.tsx   # 期望 404
-curl -s https://learn.dfyx.click/ | grep -o 'assets/index-[^"]*\.js'               # 期望是 /assets/ 下的构建产物
+curl -s https://learn.dfyx.click/ | grep -o 'assets/index-[^"]*\.js'               # 期望 /assets/index-xxx.js
 ```
 
-**只想要一套部署的话**，二选一：
+如果第一条又变成 200，说明又在发仓库根目录了 —— 去检查 Pages 项目的 build 配置。
 
-- 想只用 GitHub Actions：在 Pages 控制台把 Git 连接解绑（Settings → Builds & deployments → Disconnect），
-  或在 API 里把 `source.config.production_deployments_enabled` 设为 `false`（保留 PR 预览）；
-- 想只用 Cloudflare 的 Git 构建：删掉 `.github/workflows/deploy-cloudflare-pages.yml`，
-  并移除仓库里的 `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` secrets。
+---
+
+## 关于那个 Cloudflare API Token
+
+手动兜底工作流需要 `CLOUDFLARE_API_TOKEN`（权限：Account → Cloudflare Pages → **Edit**），
+它存在仓库 Secrets 里。
+
+**这个 token 曾经在聊天里明文出现过，建议轮换一次：**
+
+1. CF 控制台 → My Profile → API Tokens → Create Custom Token（同样的 Pages:Edit 权限）
+2. `gh secret set CLOUDFLARE_API_TOKEN --repo anonymous99-Rise/word-wind`（粘贴新 token）
+3. 回控制台删掉旧 token
+
+> 如果哪天不想要这个 token 了，把工作流文件删掉即可 —— CF 的 Git 集成完全不需要任何 token。
 
 ---
 
