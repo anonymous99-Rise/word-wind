@@ -4,7 +4,7 @@
   <h1>Word Wind</h1>
   <p>一个简洁、流畅的在线背单词网页 🎨</p>
   <p>
-    <a href="https://word-wind.pages.dev">在线体验</a> ·
+    <a href="https://word-wind-study.pages.dev">在线体验</a> ·
     <a href="https://github.com/anonymous99-Rise/word-wind/issues">提交问题</a> ·
     <a href="https://github.com/anonymous99-Rise">关注作者</a>
   </p>
@@ -32,7 +32,7 @@
 
 ## 如何使用
 
-1. 打开 [Word Wind 在线版](https://word-wind.pages.dev)，从左侧词库选择适合自己的学习范围。
+1. 打开 [Word Wind 在线版](https://word-wind-study.pages.dev)，从左侧词库选择适合自己的学习范围。
 2. 使用页面按钮或键盘快捷键浏览单词；需要定位时，也可以直接搜索单词或输入序号跳转。
 3. 想先测试记忆效果时，点击“隐藏释义”；回忆完成后再点击“显示释义”核对。
 4. 遇到不熟悉的单词，点击卡片底部的“不会”加入生词列表。

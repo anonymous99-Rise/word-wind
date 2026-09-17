@@ -64,31 +64,33 @@ jobs:
       - name: Build
         run: yarn build
 
-      # 项目不存在时自动创建；已存在则跳过。创建失败且项目查不到时给出明确报错
+      # 先查项目是否存在，不在才创建，避免每跑一次都留一条 warning
       - name: Ensure Pages project exists
         run: |
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/${PAGES_PROJECT}"
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" "$api")
+
+          if [ "$code" = "200" ]; then
+            echo "✅ 项目 $PAGES_PROJECT 已存在"
+            exit 0
+          fi
+
+          echo "项目 $PAGES_PROJECT 不存在（HTTP $code），尝试创建……"
           if npx --yes wrangler@3 pages project create "$PAGES_PROJECT" --production-branch=main; then
             echo "✅ 已创建项目 $PAGES_PROJECT"
             exit 0
           fi
 
-          echo "::warning::创建项目未成功，检查项目是否已存在……"
-          npx --yes wrangler@3 pages project list | tee /tmp/pages-projects.txt || true
-
-          if grep -q "$PAGES_PROJECT" /tmp/pages-projects.txt; then
-            echo "✅ 项目 $PAGES_PROJECT 已存在，继续部署"
-          else
-            {
-              echo "### ❌ 无法创建或找到 Cloudflare Pages 项目"
-              echo ""
-              echo "项目 \`$PAGES_PROJECT\` 不存在，且创建被拒绝。"
-              echo ""
-              echo "常见原因：**CLOUDFLARE_API_TOKEN 权限不足**。"
-              echo "该 Token 需要对应用户/账号具备 **Account → Cloudflare Pages → Edit** 权限（配置方法见 \`DEPLOY.md\`）。"
-            } >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::项目 $PAGES_PROJECT 不存在且创建被拒绝，请确认 CLOUDFLARE_API_TOKEN 具备 Account → Cloudflare Pages → Edit 权限"
-            exit 1
-          fi
+          {
+            echo "### ❌ 无法创建 Cloudflare Pages 项目"
+            echo ""
+            echo "项目 \`$PAGES_PROJECT\` 不存在，且创建被拒绝。"
+            echo ""
+            echo "常见原因：**CLOUDFLARE_API_TOKEN 权限不足**。"
+            echo "该 Token 需要具备 **Account → Cloudflare Pages → Edit** 权限（配置方法见 \`DEPLOY.md\`）。"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::项目 $PAGES_PROJECT 不存在且创建被拒绝，请确认 CLOUDFLARE_API_TOKEN 具备 Account → Cloudflare Pages → Edit 权限"
+          exit 1
 
       - name: Deploy to Cloudflare Pages
         run: npx --yes wrangler@3 pages deploy dist --project-name="$PAGES_PROJECT" --branch="${GITHUB_REF_NAME}"
