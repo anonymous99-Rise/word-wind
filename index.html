@@ -66,6 +66,43 @@
         }
       }
     </style>
+    <script>
+      // 部署更新后，浏览器里可能还留着旧版页面，它引用的 /assets/* 已经不存在了。
+      // Pages 对找不到的路径会回退成 index.html（Content-Type: text/html），
+      // 浏览器拒绝把 HTML 当 JS 模块执行，页面就白屏。这里检测到资源加载失败时
+      // 自动强刷一次去拿最新版本；用 sessionStorage 兜底，避免无限刷新。
+      ;(function () {
+        var KEY = 'word-wind:asset-retry'
+        // 禁用 cookie / 隐私模式下访问 sessionStorage 会抛异常，读不到就当“已重试过”，
+        // 这样宁可保持现状也不会陷入无限刷新
+        function alreadyRetried() {
+          try {
+            return !!sessionStorage.getItem(KEY)
+          } catch (e) {
+            return true
+          }
+        }
+        function markRetried() {
+          try {
+            sessionStorage.setItem(KEY, '1')
+          } catch (e) {
+            /* 忽略 */
+          }
+        }
+        window.addEventListener(
+          'error',
+          function (event) {
+            var el = event.target
+            if (!el || el.tagName !== 'SCRIPT' || !el.src) return
+            if (el.src.indexOf('/assets/') === -1) return
+            if (alreadyRetried()) return
+            markRetried()
+            location.reload()
+          },
+          true
+        )
+      })()
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
